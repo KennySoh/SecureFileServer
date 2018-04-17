@@ -1,4 +1,6 @@
 import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -10,8 +12,7 @@ import java.security.PrivateKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Arrays;
 
-public class ServerCP1 {
-
+public class ServerCP2 {
     private static final String psFile_path = "C:\\Users\\Li Yang\\IdeaProjects\\ns_assignment\\privateServer.der";
     //private static final String psFile_path = "privateServer.der";
     private static final String server_certpath = "C:\\Users\\Li Yang\\IdeaProjects\\ns_assignment\\server.crt";
@@ -61,14 +62,14 @@ public class ServerCP1 {
                 byte[] challengeWithNonce = new byte[numBytes];
                 fromClient.readFully(challengeWithNonce,0, numBytes);
                 System.out.println("Original Length: " + challengeWithNonce.length);
-                System.out.println("Nonce: " +Arrays.toString(challengeWithNonce));
+                System.out.println("Nonce: " + Arrays.toString(challengeWithNonce));
                 System.out.println("Challenge Length: " +challenge.length());
                 //Retrieve the nonce from challengeWithNonce and send it back to the Client
-               // String expected_response = challengeNonce.substring(challenge.length());
+                // String expected_response = challengeNonce.substring(challenge.length());
                 //System.out.println("Expected Response Length: " + expected_response.length());
                 //Prepare signed Message to the Client once correct response is received
                 //byte[] messageBytes;
-               // messageBytes = expected_response.getBytes();
+                // messageBytes = expected_response.getBytes();
                 //System.out.println("From Client: " + challenge + Arrays.toString(messageBytes));
                 encryptedNonce = cipher.doFinal(challengeWithNonce);
 
@@ -109,9 +110,27 @@ public class ServerCP1 {
                 System.out.println("Handshake Message: " + hs_string);
                 System.out.println("Handshake Protocol done, can now commence file transfer");
 
+
+                //create symmetric key
+                KeyGenerator keyGen= KeyGenerator.getInstance("AES");
+                SecretKey symmetricKey =keyGen.generateKey();
+
+                Cipher cipherSE = Cipher.getInstance("AES/ECB/PKCS5Padding");
+                cipherSE.init(Cipher.ENCRYPT_MODE, symmetricKey);
+
+                Cipher cipherSD = Cipher.getInstance("AES/ECB/PKCS5Padding");
+                cipherSD.init(Cipher.DECRYPT_MODE, symmetricKey);
+
                 // create cipher object, initialize to decrypt mode, using Private Key
                 Cipher rsaDecryption = Cipher.getInstance("RSA");
-                rsaDecryption.init(Cipher.DECRYPT_MODE, privateKey);
+                rsaDecryption.init(Cipher.ENCRYPT_MODE, privateKey);
+
+                //Encrypt Symmetric key and send over
+                System.out.println("SymmetricKey Send Over");
+                byte[] symmetricKey_encrypt=rsaDecryption.doFinal(symmetricKey.getEncoded());
+                toClient.writeInt(symmetricKey_encrypt.length);
+                toClient.write(symmetricKey_encrypt);
+                toClient.flush();
 
                 while(true){
                     int packetType = fromClient.readInt();
@@ -123,20 +142,20 @@ public class ServerCP1 {
                         FileBytes = new byte[encryptedFileBytes];
                         fromClient.readFully(FileBytes,0,encryptedFileBytes);
                         System.out.println(new String(FileBytes, 0, encryptedFileBytes));
-                        byte[] decryptedBytes = rsaDecryption.doFinal(FileBytes);
+                        byte[] decryptedBytes = cipherSD.doFinal(FileBytes);
                         System.out.println(new String(decryptedBytes, 0, decryptedBytes.length));
                         fileOutputStream = new FileOutputStream("C:\\Users\\Li Yang\\IdeaProjects\\ns_assignment\\recv_" + new String(decryptedBytes, 0, decryptedBytes.length));
                         bufferedFileOutputStream = new BufferedOutputStream(fileOutputStream);
                     }
                     // If the packet is for transferring a chunk of the file
                     else if (packetType == 1) {
-                         numBytes = fromClient.readInt();
-                            System.out.println("num bytes recieved Encrpyted:"+numBytes);
+                        numBytes = fromClient.readInt();
+                        System.out.println("num bytes recieved Encrpyted:"+numBytes);
                         if (numBytes > 0) {
                             byte [] block = new byte[numBytes];
                             fromClient.readFully(block, 0, numBytes);
                             System.out.println("encrypted file: "+new String(block, 0, block.length));
-                            byte[] decryptedBytes2 = rsaDecryption.doFinal(block);
+                            byte[] decryptedBytes2 = cipherSD.doFinal(block);
                             numBytes=decryptedBytes2.length;
                             System.out.println("num of Bytes decrypted: "+ numBytes);
                             System.out.println(new String(decryptedBytes2, 0, decryptedBytes2.length));
@@ -153,14 +172,17 @@ public class ServerCP1 {
                             toClient.write(doneMessage.getBytes());
                             toClient.flush();
 
+
                             if (bufferedFileOutputStream != null) bufferedFileOutputStream.close();
                             if (bufferedFileOutputStream != null) fileOutputStream.close();
                             fromClient.close();
                             toClient.close();
                             serverSocket.close();
-                            server.close();*/
+                            server.close();
+                            */
                         }
-                    }else if(packetType==2){
+                    }
+                    else if(packetType==2){
                         System.out.println("File has been uploaded");
                         System.out.println("Closing connection...");
 
@@ -184,5 +206,4 @@ public class ServerCP1 {
             e.printStackTrace();
         }
     }
-
 }

@@ -1,4 +1,6 @@
 import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.net.Socket;
 import java.security.NoSuchAlgorithmException;
@@ -8,7 +10,8 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
 
-public class CP1 {
+public class CP2 {
+
     //Port Number, HostName, Socket , DataInput, DataOutput, FileInput,BufferedInputStrean
     // Nounce, Message, SignedCertificate, PublicKeyCA,PublicKeySecStore  10.12.54.172
     private static final int portNo=43211;
@@ -43,7 +46,6 @@ public class CP1 {
         //1. Sending First Challenge, Identify yourself!
         System.out.println("Sending Message + Nonce...");
         //String message = "Hello SecStore,please prove your identity!";
-
         byte[] noncetest = generateNonce();
         System.out.println("Nonce: " + Arrays.toString(noncetest));
         toServer.writeInt(noncetest.length);
@@ -115,6 +117,18 @@ public class CP1 {
             toServer.write(hs_en);
             toServer.flush();
 
+            Cipher cipher2 = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+            cipher2.init(Cipher.DECRYPT_MODE,publicKey);
+
+            //await Symmetric Key
+            System.out.println("Receiving Encrypted Symmetric Key...");
+            numBytes = fromServer.readInt();
+            filename = new byte[numBytes];
+            fromServer.readFully(filename,0,numBytes);
+
+            byte[] symmetricKey_bytes=cipher2.doFinal(filename);
+            SecretKey symmetricKey = new SecretKeySpec(symmetricKey_bytes, 0, symmetricKey_bytes.length, "AES");
+
 
             //File Transfer
             // Cp1 starts form here
@@ -123,11 +137,11 @@ public class CP1 {
             // Starting time
             Long startTime = System.currentTimeMillis();
             // cipher and encript with server publickey
-            Cipher cipher1 = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            cipher1.init(Cipher.ENCRYPT_MODE,publicKey);
+            Cipher cipherS = Cipher.getInstance("AES/ECB/PKCS5Padding");
+            cipherS.init(Cipher.ENCRYPT_MODE, symmetricKey);
 
-            String filename1=new String("8.txt"); //999
-            byte[] filename_encrypted=cipher1.doFinal(filename1.getBytes());
+            String filename1=new String("8.txt");//999
+            byte[] filename_encrypted=cipherS.doFinal(filename1.getBytes());
 
             // Send the filename
             toServer.writeInt(0);
@@ -148,20 +162,18 @@ public class CP1 {
                 numBytes = bufferedFileInputStream.read(fromFileBuffer); //num of bytes is 15
                 fileEnded = numBytes < 117;
 
+                System.out.println(new String(fromFileBuffer, 0, numBytes));
+                //encryption
+                byte[] fromFileBuffer_encrypt= cipherS.doFinal(fromFileBuffer);
+                //numBytes=fromFileBuffer_encrypt.length;
+                //System.out.println("num of bytes:" +fromFileBuffer_encrypt.length); //after encryption is 128
+                //System.out.println("num of bytes:" +numBytes);
+                numBytes=fromFileBuffer_encrypt.length;
 
-                    System.out.println(new String(fromFileBuffer, 0, numBytes));
-                    //encryption
-                    byte[] fromFileBuffer_encrypt = cipher1.doFinal(fromFileBuffer);
-                    //numBytes=fromFileBuffer_encrypt.length;
-                    //System.out.println("num of bytes:" +fromFileBuffer_encrypt.length); //after encryption is 128
-                    //System.out.println("num of bytes:" +numBytes);
-                    numBytes = fromFileBuffer_encrypt.length;
-
-                    toServer.writeInt(1);
-                    toServer.writeInt(numBytes);
-                    toServer.write(fromFileBuffer_encrypt);
-                    toServer.flush();
-
+                toServer.writeInt(1);
+                toServer.writeInt(numBytes);
+                toServer.write(fromFileBuffer_encrypt);
+                toServer.flush();
             }
 
             toServer.writeInt(2);
